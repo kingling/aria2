@@ -258,7 +258,7 @@ ssize_t AbstractDiskWriter::writeDataInternal(const unsigned char* data,
                                               size_t len, int64_t offset)
 {
   if (mapaddr_) {
-    memcpy(mapaddr_ + offset, data, len);
+    std::copy_n(data, len, mapaddr_ + offset);
     return len;
   }
   else {
@@ -298,7 +298,7 @@ ssize_t AbstractDiskWriter::readDataInternal(unsigned char* data, size_t len,
       return 0;
     }
     auto readlen = std::min(maplen_ - offset, static_cast<int64_t>(len));
-    memcpy(data, mapaddr_ + offset, readlen);
+    std::copy_n(mapaddr_ + offset, readlen, data);
     return readlen;
   }
   else {
@@ -588,6 +588,18 @@ void AbstractDiskWriter::dropCache(int64_t len, int64_t offset)
 #ifdef HAVE_POSIX_FADVISE
   posix_fadvise(fd_, offset, len, POSIX_FADV_DONTNEED);
 #endif // HAVE_POSIX_FADVISE
+}
+
+void AbstractDiskWriter::flushOSBuffers()
+{
+  if (fd_ == A2_BAD_FD) {
+    return;
+  }
+#ifdef __MINGW32__
+  FlushFileBuffers(fd_);
+#else  // !__MINGW32__
+  fsync(fd_);
+#endif // __MINGW32__
 }
 
 } // namespace aria2

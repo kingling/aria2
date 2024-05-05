@@ -44,6 +44,7 @@
 #ifdef HAVE_OPENSSL
 #  include <openssl/err.h>
 #  include <openssl/ssl.h>
+#  include "libssl_compat.h"
 #endif // HAVE_OPENSSL
 #ifdef HAVE_LIBGCRYPT
 #  include <gcrypt.h>
@@ -72,6 +73,7 @@
 #endif // HAVE_LIBGMP
 #include "LogFactory.h"
 #include "util.h"
+#include "SocketCore.h"
 
 namespace aria2 {
 
@@ -89,6 +91,11 @@ void gnutls_log_callback(int level, const char* str)
 #endif // HAVE_LIBGNUTLS
 
 bool Platform::initialized_ = false;
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+OSSL_PROVIDER* Platform::legacy_provider_ = nullptr;
+OSSL_PROVIDER* Platform::default_provider_ = nullptr;
+#endif // OPENSSL_VERSION_NUMBER >= 0x30000000L
 
 Platform::Platform() { setUp(); }
 
@@ -111,12 +118,25 @@ bool Platform::setUp()
 #endif // ENABLE_NLS
 
 #ifdef HAVE_OPENSSL
+#  if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  // RC4 is in the legacy provider.
+  legacy_provider_ = OSSL_PROVIDER_load(nullptr, "legacy");
+  if (!legacy_provider_) {
+    throw DL_ABORT_EX("OSSL_PROVIDER_load 'legacy' failed.");
+  }
+
+  default_provider_ = OSSL_PROVIDER_load(nullptr, "default");
+  if (!default_provider_) {
+    throw DL_ABORT_EX("OSSL_PROVIDER_load 'default' failed.");
+  }
+#  elif !OPENSSL_101_API
   // for SSL initialization
   SSL_load_error_strings();
   SSL_library_init();
   // Need this to "decrypt" p12 files.
   OpenSSL_add_all_algorithms();
-#endif // HAVE_OPENSSL
+#  endif // !OPENSSL_101_API
+#endif   // HAVE_OPENSSL
 #ifdef HAVE_LIBGCRYPT
   if (!gcry_check_version("1.2.4")) {
     throw DL_ABORT_EX("gcry_check_version() failed.");
@@ -177,6 +197,21 @@ bool Platform::tearDown()
     return false;
   }
   initialized_ = false;
+
+  SocketCore::setClientTLSContext(nullptr);
+  SocketCore::setServerTLSContext(nullptr);
+
+#ifdef HAVE_OPENSSL
+#  if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  if (default_provider_) {
+    OSSL_PROVIDER_unload(default_provider_);
+  }
+
+  if (legacy_provider_) {
+    OSSL_PROVIDER_unload(legacy_provider_);
+  }
+#  endif // OPENSSL_VERSION_NUMBER >= 0x30000000L
+#endif   // HAVE_OPENSSL
 
 #ifdef HAVE_LIBGNUTLS
   gnutls_global_deinit();

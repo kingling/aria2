@@ -863,38 +863,39 @@ void SocketCore::readData(void* data, size_t& len)
   }
   else
 #endif // HAVE_LIBSSH2
-      if (!secure_) {
-    // Cast for Windows recv()
-    while ((ret = recv(sockfd_, reinterpret_cast<char*>(data), len, 0)) == -1 &&
-           SOCKET_ERRNO == A2_EINTR)
-      ;
-    int errNum = SOCKET_ERRNO;
-    if (ret == -1) {
-      if (!A2_WOULDBLOCK(errNum)) {
-        throw DL_RETRY_EX(fmt(EX_SOCKET_RECV, errorMsg(errNum).c_str()));
-      }
-      wantRead_ = true;
-      ret = 0;
-    }
-  }
-  else {
-#ifdef ENABLE_SSL
-    ret = tlsSession_->readData(data, len);
-    if (ret < 0) {
-      if (ret != TLS_ERR_WOULDBLOCK) {
-        throw DL_RETRY_EX(
-            fmt(EX_SOCKET_RECV, tlsSession_->getLastErrorString().c_str()));
-      }
-      if (tlsSession_->checkDirection() == TLS_WANT_READ) {
+    if (!secure_) {
+      // Cast for Windows recv()
+      while ((ret = recv(sockfd_, reinterpret_cast<char*>(data), len, 0)) ==
+                 -1 &&
+             SOCKET_ERRNO == A2_EINTR)
+        ;
+      int errNum = SOCKET_ERRNO;
+      if (ret == -1) {
+        if (!A2_WOULDBLOCK(errNum)) {
+          throw DL_RETRY_EX(fmt(EX_SOCKET_RECV, errorMsg(errNum).c_str()));
+        }
         wantRead_ = true;
+        ret = 0;
       }
-      else {
-        wantWrite_ = true;
-      }
-      ret = 0;
     }
+    else {
+#ifdef ENABLE_SSL
+      ret = tlsSession_->readData(data, len);
+      if (ret < 0) {
+        if (ret != TLS_ERR_WOULDBLOCK) {
+          throw DL_RETRY_EX(
+              fmt(EX_SOCKET_RECV, tlsSession_->getLastErrorString().c_str()));
+        }
+        if (tlsSession_->checkDirection() == TLS_WANT_READ) {
+          wantRead_ = true;
+        }
+        else {
+          wantWrite_ = true;
+        }
+        ret = 0;
+      }
 #endif // ENABLE_SSL
-  }
+    }
 
   len = ret;
 }
@@ -971,23 +972,29 @@ bool SocketCore::tlsHandshake(TLSContext* tlsctx, const std::string& hostname)
       if (!hostname.empty()) {
         ss << ")";
       }
-      auto peerInfo = ss.str();
 
-      // 2. Issue any warnings
+      std::string tlsVersion;
       switch (ver) {
-      case TLS_PROTO_NONE:
-        A2_LOG_WARN(fmt(MSG_WARN_UNKNOWN_TLS_CONNECTION, peerInfo.c_str()));
+      case TLS_PROTO_TLS11:
+        tlsVersion = A2_V_TLS11;
         break;
-      case TLS_PROTO_SSL3:
-        A2_LOG_WARN(
-            fmt(MSG_WARN_OLD_TLS_CONNECTION, "SSLv3", peerInfo.c_str()));
+      case TLS_PROTO_TLS12:
+        tlsVersion = A2_V_TLS12;
+        break;
+      case TLS_PROTO_TLS13:
+        tlsVersion = A2_V_TLS13;
         break;
       default:
-        A2_LOG_DEBUG(fmt("Securely connected to %s", peerInfo.c_str()));
-        break;
+        assert(0);
+        abort();
       }
 
-      // 3. We're connected now!
+      auto peerInfo = ss.str();
+
+      A2_LOG_DEBUG(fmt("Securely connected to %s with %s", peerInfo.c_str(),
+                       tlsVersion.c_str()));
+
+      // 2. We're connected now!
       secure_ = A2_TLS_CONNECTED;
       return true;
     }

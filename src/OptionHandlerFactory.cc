@@ -513,8 +513,8 @@ std::vector<OptionHandler*> OptionHandlerFactory::createOptionHandlers()
 #ifdef ENABLE_SSL
   {
     OptionHandler* op(new ParameterOptionHandler(
-        PREF_MIN_TLS_VERSION, TEXT_MIN_TLS_VERSION, A2_V_TLS10,
-        {A2_V_SSL3, A2_V_TLS10, A2_V_TLS11, A2_V_TLS12}));
+        PREF_MIN_TLS_VERSION, TEXT_MIN_TLS_VERSION, A2_V_TLS12,
+        {A2_V_TLS11, A2_V_TLS12, A2_V_TLS13}));
     op->addTag(TAG_ADVANCED);
     handlers.push_back(op);
   }
@@ -1199,6 +1199,16 @@ std::vector<OptionHandler*> OptionHandlerFactory::createOptionHandlers()
   {
     OptionHandler* op(new BooleanOptionHandler(
         PREF_USE_HEAD, TEXT_USE_HEAD, A2_V_FALSE, OptionHandler::OPT_ARG));
+    op->addTag(TAG_HTTP);
+    op->setInitialOption(true);
+    op->setChangeGlobalOption(true);
+    op->setChangeOptionForReserved(true);
+    handlers.push_back(op);
+  }
+  {
+    OptionHandler* op(new BooleanOptionHandler(
+        PREF_NO_WANT_DIGEST_HEADER, TEXT_NO_WANT_DIGEST_HEADER, A2_V_FALSE,
+        OptionHandler::OPT_ARG));
     op->addTag(TAG_HTTP);
     op->setInitialOption(true);
     op->setChangeGlobalOption(true);
